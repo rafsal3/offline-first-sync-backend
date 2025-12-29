@@ -48,16 +48,19 @@ exports.sync = async (req, res, next) => {
                 try {
                     const result = await processChange(change, userId, deviceId);
                     results.acknowledged.push({
-                        localId: change.localId,
-                        serverId: result.serverId,
+                        operationId: change.operationId,
+                        id: change.id,
                         entityType: change.entityType,
                         operation: change.operation,
-                        success: true
+                        success: true,
+                        conflict: result.conflict || false,
+                        duplicate: result.duplicate || false
                     });
                 } catch (error) {
                     console.error('Error processing change:', error);
                     results.acknowledged.push({
-                        localId: change.localId,
+                        operationId: change.operationId,
+                        id: change.id,
                         entityType: change.entityType,
                         operation: change.operation,
                         success: false,
@@ -70,7 +73,7 @@ exports.sync = async (req, res, next) => {
         // Get server updates since last sync
         const lastSync = lastSyncTimestamp ? new Date(lastSyncTimestamp) : new Date(0);
 
-        // Fetch all updated entities since last sync
+        // Fetch all updated entities since last sync (excluding deleted ones for initial load)
         const [spaces, categories, items] = await Promise.all([
             Space.find({
                 userId,
@@ -103,10 +106,10 @@ exports.sync = async (req, res, next) => {
 
 // Process a single change operation
 async function processChange(change, userId, deviceId) {
-    const { entityType, operation, localId, data, timestamp } = change;
+    const { entityType, operation, id, data, timestamp, operationId } = change;
 
-    if (!entityType || !operation || !localId) {
-        throw new Error('Invalid change format: missing required fields');
+    if (!entityType || !operation || !id) {
+        throw new Error('Invalid change format: missing required fields (entityType, operation, id)');
     }
 
     const Model = modelMap[entityType];
@@ -116,15 +119,31 @@ async function processChange(change, userId, deviceId) {
 
     const changeTimestamp = timestamp ? new Date(timestamp) : new Date();
 
+    // Check if this exact operation was already processed (idempotency via operationId)
+    if (operationId) {
+        const existingLog = await SyncLog.findOne({
+            userId,
+            deviceId,
+            entityId: id,
+            operation,
+            timestamp: changeTimestamp
+        });
+
+        if (existingLog) {
+            console.log(`Operation ${operationId} already processed, skipping`);
+            return { id, duplicate: true, conflict: false };
+        }
+    }
+
     switch (operation) {
         case 'create':
-            return await handleCreate(Model, entityType, localId, data, userId, deviceId, changeTimestamp);
+            return await handleCreate(Model, entityType, id, data, userId, deviceId, changeTimestamp);
 
         case 'update':
-            return await handleUpdate(Model, entityType, localId, data, userId, deviceId, changeTimestamp);
+            return await handleUpdate(Model, entityType, id, data, userId, deviceId, changeTimestamp);
 
         case 'delete':
-            return await handleDelete(Model, entityType, localId, userId, deviceId, changeTimestamp);
+            return await handleDelete(Model, entityType, id, userId, deviceId, changeTimestamp);
 
         default:
             throw new Error(`Unknown operation: ${operation}`);
@@ -132,65 +151,60 @@ async function processChange(change, userId, deviceId) {
 }
 
 // Handle create operation
-async function handleCreate(Model, entityType, localId, data, userId, deviceId, timestamp) {
+async function handleCreate(Model, entityType, id, data, userId, deviceId, timestamp) {
     // Check if already exists (idempotency)
-    let existing = await Model.findOne({ userId, localId });
+    let existing = await Model.findOne({ _id: id, userId });
 
     if (existing) {
-        // Already created, return existing serverId
-        return { serverId: existing._id.toString() };
+        // Already created, return success
+        console.log(`Entity ${entityType} ${id} already exists, skipping create`);
+        return { id, conflict: false };
     }
 
-    // Resolve references (spaceId, categoryId) from localIds
-    const resolvedData = await resolveReferences(data, userId);
-
-    // Create new entity
-    const entity = await Model.create({
-        ...resolvedData,
-        localId,
-        serverId: uuidv4(),
+    // Create new entity with client-provided ID
+    const entity = new Model({
+        _id: id,  // Use client-generated UUID
+        ...data,
         userId,
         deviceId,
         createdAt: timestamp,
         updatedAt: timestamp
     });
 
+    await entity.save();
+
     // Log the operation
     await SyncLog.create({
         userId,
         deviceId,
         entityType,
-        entityId: entity._id,
-        localId,
+        entityId: id,
         operation: 'create',
         changes: data,
         timestamp
     });
 
-    return { serverId: entity._id.toString() };
+    return { id };
 }
 
 // Handle update operation
-async function handleUpdate(Model, entityType, localId, data, userId, deviceId, timestamp) {
-    const existing = await Model.findOne({ userId, localId });
+async function handleUpdate(Model, entityType, id, data, userId, deviceId, timestamp) {
+    const existing = await Model.findOne({ _id: id, userId });
 
     if (!existing) {
-        throw new Error(`Entity not found: ${entityType} with localId ${localId}`);
+        throw new Error(`Entity not found: ${entityType} with id ${id}`);
     }
 
     // Conflict resolution: last-write-wins
     if (existing.updatedAt > timestamp) {
-        console.log(`Conflict detected for ${entityType} ${localId}: server version is newer`);
+        console.log(`Conflict detected for ${entityType} ${id}: server version is newer`);
         // Server version wins, don't update
-        return { serverId: existing._id.toString(), conflict: true };
+        return { id, conflict: true };
     }
 
-    // Resolve references
-    const resolvedData = await resolveReferences(data, userId);
-
     // Update only changed fields
-    Object.keys(resolvedData).forEach(key => {
-        existing[key] = resolvedData[key];
+    Object.keys(data).forEach(key => {
+        existing[key] = data[key];
     });
 
     existing.updatedAt = timestamp;
@@ -203,27 +217,26 @@ async function handleUpdate(Model, entityType, localId, data, userId, deviceId, 
         userId,
         deviceId,
         entityType,
-        entityId: existing._id,
-        localId,
+        entityId: id,
         operation: 'update',
         changes: data,
         timestamp
     });
 
-    return { serverId: existing._id.toString() };
+    return { id };
 }
 
 // Handle delete operation (soft delete)
-async function handleDelete(Model, entityType, localId, userId, deviceId, timestamp) {
-    const existing = await Model.findOne({ userId, localId });
+async function handleDelete(Model, entityType, id, userId, deviceId, timestamp) {
+    const existing = await Model.findOne({ _id: id, userId });
 
     if (!existing) {
         // Already deleted or never existed
-        return { serverId: null };
+        console.log(`Entity ${entityType} ${id} not found, skipping delete`);
+        return { id };
     }
 
     // Soft delete
-    existing.isDeleted = true;
     existing.deletedAt = timestamp;
     existing.updatedAt = timestamp;
     existing.deviceId = deviceId;
@@ -235,39 +248,13 @@ async function handleDelete(Model, entityType, localId, userId, deviceId, timest
         userId,
         deviceId,
         entityType,
-        entityId: existing._id,
-        localId,
+        entityId: id,
         operation: 'delete',
         changes: {},
         timestamp
     });
 
-    return { serverId: existing._id.toString() };
-}
-
-// Resolve local IDs to server IDs for references
-async function resolveReferences(data, userId) {
-    const resolved = { ...data };
-
-    // Resolve spaceLocalId to spaceId
-    if (data.spaceLocalId) {
-        const space = await Space.findOne({ userId, localId: data.spaceLocalId });
-        if (space) {
-            resolved.spaceId = space._id;
-        }
-        delete resolved.spaceLocalId;
-    }
-
-    // Resolve categoryLocalId to categoryId
-    if (data.categoryLocalId) {
-        const category = await Category.findOne({ userId, localId: data.categoryLocalId });
-        if (category) {
-            resolved.categoryId = category._id;
-        }
-        delete resolved.categoryLocalId;
-    }
-
-    return resolved;
+    return { id };
 }
 
 // Update device info for user
@@ -292,8 +279,7 @@ async function updateDeviceInfo(userId, deviceId) {
 // Format entity for response (remove internal fields)
 function formatEntity(entity) {
     const formatted = {
-        localId: entity.localId,
-        serverId: entity._id.toString(),
+        id: entity._id,
         ...entity
     };
 
@@ -312,9 +298,9 @@ exports.getInitialData = async (req, res, next) => {
         const userId = req.user._id;
 
         const [spaces, categories, items] = await Promise.all([
-            Space.find({ userId, isDeleted: false }).lean(),
-            Category.find({ userId, isDeleted: false }).lean(),
-            Item.find({ userId, isDeleted: false }).lean()
+            Space.find({ userId, deletedAt: null }).lean(),
+            Category.find({ userId, deletedAt: null }).lean(),
+            Item.find({ userId, deletedAt: null }).lean()
         ]);
 
         res.status(200).json({

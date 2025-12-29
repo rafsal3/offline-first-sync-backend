@@ -18,11 +18,7 @@ const syncLogSchema = new mongoose.Schema({
         enum: ['space', 'category', 'item']
     },
     entityId: {
-        type: mongoose.Schema.Types.ObjectId,
-        required: true
-    },
-    localId: {
-        type: String,
+        type: String,  // Client-generated UUID
         required: true
     },
     operation: {
