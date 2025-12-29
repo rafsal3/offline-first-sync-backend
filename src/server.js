@@ -9,6 +9,7 @@ const errorHandler = require('./middleware/errorHandler');
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const syncRoutes = require('./routes/syncRoutes');
+const crudRoutes = require('./routes/crudRoutes');  // Debug/Admin only
 
 // Connect to database
 connectDB();
@@ -50,7 +51,8 @@ app.get('/health', (req, res) => {
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/sync', syncRoutes);
+app.use('/api/sync', syncRoutes);  // ⭐ Main sync endpoint (use this!)
+app.use('/api', crudRoutes);       // ⚠️ Debug/Admin only (don't use in app!)
 
 // 404 handler
 app.use((req, res) => {

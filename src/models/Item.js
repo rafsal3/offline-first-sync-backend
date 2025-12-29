@@ -1,15 +1,10 @@
 const mongoose = require('mongoose');
 
 const itemSchema = new mongoose.Schema({
-    localId: {
+    // Client-generated UUID (primary identifier)
+    _id: {
         type: String,
-        required: true,
-        index: true
-    },
-    serverId: {
-        type: String,
-        unique: true,
-        sparse: true
+        required: true
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -18,17 +13,13 @@ const itemSchema = new mongoose.Schema({
         index: true
     },
     spaceId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Space',
+        type: String,  // References Space._id (client-generated UUID)
         index: true
     },
-    spaceLocalId: String,
     categoryId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Category',
+        type: String,  // References Category._id (client-generated UUID)
         index: true
     },
-    categoryLocalId: String,
 
     // Item content
     title: {
@@ -77,31 +68,36 @@ const itemSchema = new mongoose.Schema({
     tags: [String],
     dueDate: Date,
 
-    // Soft delete
-    isDeleted: {
-        type: Boolean,
-        default: false
+    // Soft delete (nullable)
+    deletedAt: {
+        type: Date,
+        default: null
     },
-    deletedAt: Date,
 
     // Sync metadata
     deviceId: String,
     createdAt: {
         type: Date,
-        default: Date.now
+        required: true
     },
     updatedAt: {
         type: Date,
-        default: Date.now
+        required: true
     }
 }, {
-    timestamps: true
+    _id: false,
+    timestamps: false
+});
+
+// Computed field for isDeleted
+itemSchema.virtual('isDeleted').get(function () {
+    return this.deletedAt !== null;
 });
 
 // Compound indexes for efficient querying
-itemSchema.index({ userId: 1, isDeleted: 1, updatedAt: -1 });
+itemSchema.index({ userId: 1, deletedAt: 1, updatedAt: -1 });
 itemSchema.index({ userId: 1, spaceId: 1, categoryId: 1 });
-itemSchema.index({ userId: 1, localId: 1 });
+itemSchema.index({ userId: 1, _id: 1 });
 itemSchema.index({ userId: 1, isCompleted: 1 });
 
 module.exports = mongoose.model('Item', itemSchema);

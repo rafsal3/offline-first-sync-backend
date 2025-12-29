@@ -1,15 +1,10 @@
 const mongoose = require('mongoose');
 
 const categorySchema = new mongoose.Schema({
-    localId: {
+    // Client-generated UUID (primary identifier)
+    _id: {
         type: String,
-        required: true,
-        index: true
-    },
-    serverId: {
-        type: String,
-        unique: true,
-        sparse: true
+        required: true
     },
     userId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -18,12 +13,12 @@ const categorySchema = new mongoose.Schema({
         index: true
     },
     spaceId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Space',
+        type: String,  // References Space._id (client-generated UUID)
         required: true,
         index: true
     },
-    spaceLocalId: String,
+
+    // Category data
     name: {
         type: String,
         required: true,
@@ -45,26 +40,35 @@ const categorySchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
-    isDeleted: {
-        type: Boolean,
-        default: false
+
+    // Soft delete (nullable)
+    deletedAt: {
+        type: Date,
+        default: null
     },
-    deletedAt: Date,
+
+    // Sync metadata
     deviceId: String,
     createdAt: {
         type: Date,
-        default: Date.now
+        required: true
     },
     updatedAt: {
         type: Date,
-        default: Date.now
+        required: true
     }
 }, {
-    timestamps: true
+    _id: false,
+    timestamps: false
+});
+
+// Computed field for isDeleted
+categorySchema.virtual('isDeleted').get(function () {
+    return this.deletedAt !== null;
 });
 
 // Compound indexes for efficient querying
-categorySchema.index({ userId: 1, spaceId: 1, isDeleted: 1, updatedAt: -1 });
-categorySchema.index({ userId: 1, localId: 1 });
+categorySchema.index({ userId: 1, spaceId: 1, deletedAt: 1, updatedAt: -1 });
+categorySchema.index({ userId: 1, _id: 1 });
 
 module.exports = mongoose.model('Category', categorySchema);
