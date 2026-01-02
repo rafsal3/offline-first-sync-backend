@@ -78,9 +78,16 @@ BASE URL: https://offline-first-sync-backend.onrender.com
    Request Body:
    {
      "data": {
-       "spaces": [...],
-       "categories": [...],
-       "items": [...]
+       "spaces": [
+         {
+           "id": "space_123",
+           "name": "Personal",
+           "icon": "👤",
+           "isHidden": false,
+           "categories": [...],
+           "uncategorizedItems": [...]  // NEW: Items without a category
+         }
+       ]
      },
      "version": 5  // Optional: for conflict detection
    }
@@ -118,9 +125,16 @@ BASE URL: https://offline-first-sync-backend.onrender.com
    Response (200 OK):
    {
      "data": {
-       "spaces": [...],
-       "categories": [...],
-       "items": [...]
+       "spaces": [
+         {
+           "id": "space_123",
+           "name": "Personal",
+           "icon": "👤",
+           "isHidden": false,
+           "categories": [...],
+           "uncategorizedItems": [...]  // NEW: Items without a category
+         }
+       ]
      },
      "version": 6,
      "lastModifiedAt": "2026-01-02T07:59:18.123Z"
@@ -183,5 +197,8 @@ BASE URL: https://offline-first-sync-backend.onrender.com
 - The "data" field accepts any JSON structure (full bucket list snapshot)
 - Version tracking helps detect conflicts
 - CORS is enabled for cross-origin requests
+- NEW: Spaces now support "uncategorizedItems" array for items without a category
+- The backend automatically migrates orphaned items (categoryId: null) to uncategorizedItems
+- Uncategorized items must have categoryId: null
 
 ================================================================================

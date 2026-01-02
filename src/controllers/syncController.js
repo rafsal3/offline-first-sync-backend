@@ -1,4 +1,5 @@
 const UserData = require('../models/UserData');
+const { normalizeAndValidate } = require('../utils/dataNormalizer');
 
 // POST /sync/push
 const push = async (req, res) => {
@@ -13,6 +14,10 @@ const push = async (req, res) => {
             return res.status(400).json({ error: 'Data is required' });
         }
 
+        // Normalize data to ensure uncategorizedItems field exists
+        // and migrate any orphaned items from categories
+        const normalizedData = normalizeAndValidate(data);
+
         // Find user data
         let userData = await UserData.findOne({ userId });
 
@@ -22,7 +27,7 @@ const push = async (req, res) => {
             userData = new UserData({
                 userId,
                 version: 1,
-                data
+                data: normalizedData
             });
         } else {
             console.log(`[Sync] Existing data v:${userData.version}`);
@@ -39,7 +44,7 @@ const push = async (req, res) => {
             }
 
             // Update data and increment version
-            userData.data = data;
+            userData.data = normalizedData;
             userData.version += 1;
         }
 
@@ -77,8 +82,11 @@ const pull = async (req, res) => {
 
         console.log(`[Sync] Pull request for user ${userId} - v:${userData.version}`);
 
+        // Normalize data before sending to ensure uncategorizedItems field exists
+        const normalizedData = normalizeAndValidate(userData.data);
+
         res.status(200).json({
-            data: userData.data,
+            data: normalizedData,
             version: userData.version,
             lastModifiedAt: userData.lastModifiedAt
         });
