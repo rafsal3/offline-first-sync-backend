@@ -6,6 +6,8 @@ const push = async (req, res) => {
         const { data, version } = req.body;
         const userId = req.userId;
 
+        console.log(`[Sync] Push request for user ${userId}. Client v:${version}`);
+
         // Validate input
         if (!data) {
             return res.status(400).json({ error: 'Data is required' });
@@ -16,14 +18,19 @@ const push = async (req, res) => {
 
         if (!userData) {
             // Create new user data if doesn't exist
+            console.log(`[Sync] Creating new data for user ${userId}`);
             userData = new UserData({
                 userId,
                 version: 1,
                 data
             });
         } else {
-            // Check version for conflict detection (optional)
-            if (version && userData.version > version) {
+            console.log(`[Sync] Existing data v:${userData.version}`);
+
+            // Check version for conflict detection
+            // Fix: Check strictly for undefined to properly handle version 0
+            if (version !== undefined && userData.version > version) {
+                console.warn(`[Sync] Conflict detected! Server: ${userData.version}, Client: ${version}`);
                 return res.status(409).json({
                     error: 'Conflict detected',
                     serverVersion: userData.version,
@@ -37,6 +44,7 @@ const push = async (req, res) => {
         }
 
         await userData.save();
+        console.log(`[Sync] Push successful. New v:${userData.version}`);
 
         res.status(200).json({
             message: 'Data synced successfully',
@@ -58,6 +66,7 @@ const pull = async (req, res) => {
         const userData = await UserData.findOne({ userId });
 
         if (!userData) {
+            console.log(`[Sync] Pull request for user ${userId} - No data found`);
             // Return empty data if user data doesn't exist
             return res.status(200).json({
                 data: {},
@@ -65,6 +74,8 @@ const pull = async (req, res) => {
                 lastModifiedAt: null
             });
         }
+
+        console.log(`[Sync] Pull request for user ${userId} - v:${userData.version}`);
 
         res.status(200).json({
             data: userData.data,
