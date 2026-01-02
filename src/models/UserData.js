@@ -12,23 +12,16 @@ const userDataSchema = new mongoose.Schema({
         required: true,
         default: 1
     },
-    lastModifiedAt: {
-        type: Date,
-        default: Date.now
-    },
     data: {
         type: mongoose.Schema.Types.Mixed,
         required: true,
         default: {}
     }
+}, {
+    timestamps: { createdAt: 'createdAt', updatedAt: 'lastModifiedAt' }
 });
 
 // Index for faster userId lookups
 userDataSchema.index({ userId: 1 });
-
-// Update lastModifiedAt before saving
-userDataSchema.pre('save', function () {
-    this.lastModifiedAt = new Date();
-});
 
 module.exports = mongoose.model('UserData', userDataSchema);
