@@ -1,122 +1,105 @@
+const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const UserData = require('../models/UserData');
 
-// Generate JWT Token
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: process.env.JWT_EXPIRE
-    });
-};
-
-// @desc    Register user
-// @route   POST /api/auth/register
-// @access  Public
-exports.register = async (req, res, next) => {
-    try {
-        const { email, password, name } = req.body;
-
-        // Check if user exists
-        const existingUser = await User.findOne({ email });
-        if (existingUser) {
-            return res.status(400).json({
-                success: false,
-                message: 'User already exists'
-            });
-        }
-
-        // Create user
-        const user = await User.create({
-            email,
-            password,
-            name
-        });
-
-        // Generate token
-        const token = generateToken(user._id);
-
-        res.status(201).json({
-            success: true,
-            token,
-            user: {
-                id: user._id,
-                email: user.email,
-                name: user.name
-            }
-        });
-    } catch (error) {
-        next(error);
-    }
-};
-
-// @desc    Login user
-// @route   POST /api/auth/login
-// @access  Public
-exports.login = async (req, res, next) => {
+// POST /auth/register
+const register = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Validate email & password
+        // Validate input
         if (!email || !password) {
-            return res.status(400).json({
-                success: false,
-                message: 'Please provide email and password'
-            });
+            return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        // Check for user
-        const user = await User.findOne({ email }).select('+password');
-
-        if (!user) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
+        if (password.length < 6) {
+            return res.status(400).json({ error: 'Password must be at least 6 characters' });
         }
 
-        // Check if password matches
-        const isMatch = await user.comparePassword(password);
-
-        if (!isMatch) {
-            return res.status(401).json({
-                success: false,
-                message: 'Invalid credentials'
-            });
+        // Check if user already exists
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(409).json({ error: 'User already exists' });
         }
+
+        // Hash password
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        // Create user
+        const user = new User({
+            email,
+            passwordHash
+        });
+        await user.save();
+
+        // Initialize empty user data
+        const userData = new UserData({
+            userId: user._id,
+            version: 1,
+            data: {}
+        });
+        await userData.save();
 
         // Generate token
-        const token = generateToken(user._id);
+        const token = jwt.sign(
+            { userId: user._id },
+            process.env.JWT_SECRET,
+            { expiresIn: '30d' }
+        );
 
-        res.status(200).json({
-            success: true,
+        res.status(201).json({
+            message: 'User registered successfully',
             token,
-            user: {
-                id: user._id,
-                email: user.email,
-                name: user.name
-            }
+            userId: user._id
         });
     } catch (error) {
-        next(error);
+        console.error('Register error:', error);
+        res.status(500).json({ error: 'Registration failed' });
     }
 };
 
-// @desc    Get current logged in user
-// @route   GET /api/auth/me
-// @access  Private
-exports.getMe = async (req, res, next) => {
+// POST /auth/login
+const login = async (req, res) => {
     try {
-        const user = await User.findById(req.user.id);
+        const { email, password } = req.body;
+
+        // Validate input
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        // Find user
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Verify password
+        const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+        if (!isValidPassword) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        // Generate token
+        const token = jwt.sign(
+            { userId: user._id },
+            process.env.JWT_SECRET,
+            { expiresIn: '30d' }
+        );
 
         res.status(200).json({
-            success: true,
-            user: {
-                id: user._id,
-                email: user.email,
-                name: user.name,
-                devices: user.devices
-            }
+            message: 'Login successful',
+            token,
+            userId: user._id
         });
     } catch (error) {
-        next(error);
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
     }
+};
+
+module.exports = {
+    register,
+    login
 };

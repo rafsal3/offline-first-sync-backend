@@ -1,13 +1,12 @@
 const express = require('express');
-const { sync, getInitialData } = require('../controllers/syncController');
-const { protect } = require('../middleware/auth');
-
 const router = express.Router();
+const syncController = require('../controllers/syncController');
+const authMiddleware = require('../middleware/auth');
 
-// Main sync endpoint
-router.post('/', protect, sync);
+// POST /sync/push
+router.post('/push', authMiddleware, syncController.push);
 
-// Get initial data for first-time sync
-router.get('/initial', protect, getInitialData);
+// GET /sync/pull
+router.get('/pull', authMiddleware, syncController.pull);
 
 module.exports = router;
