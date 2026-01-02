@@ -27,9 +27,8 @@ const userDataSchema = new mongoose.Schema({
 userDataSchema.index({ userId: 1 });
 
 // Update lastModifiedAt before saving
-userDataSchema.pre('save', function (next) {
+userDataSchema.pre('save', function () {
     this.lastModifiedAt = new Date();
-    next();
 });
 
 module.exports = mongoose.model('UserData', userDataSchema);

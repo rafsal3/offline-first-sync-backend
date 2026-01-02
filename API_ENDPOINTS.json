@@ -1,0 +1,104 @@
+{
+    "baseUrl": "https://offline-first-sync-backend.onrender.com",
+    "endpoints": {
+        "auth": {
+            "register": {
+                "method": "POST",
+                "path": "/auth/register",
+                "fullUrl": "https://offline-first-sync-backend.onrender.com/auth/register",
+                "requiresAuth": false,
+                "requestBody": {
+                    "email": "string (required)",
+                    "password": "string (required, min 6 chars)"
+                },
+                "responseSuccess": {
+                    "message": "string",
+                    "token": "string (JWT)",
+                    "userId": "string"
+                }
+            },
+            "login": {
+                "method": "POST",
+                "path": "/auth/login",
+                "fullUrl": "https://offline-first-sync-backend.onrender.com/auth/login",
+                "requiresAuth": false,
+                "requestBody": {
+                    "email": "string (required)",
+                    "password": "string (required)"
+                },
+                "responseSuccess": {
+                    "message": "string",
+                    "token": "string (JWT)",
+                    "userId": "string"
+                }
+            }
+        },
+        "sync": {
+            "push": {
+                "method": "POST",
+                "path": "/sync/push",
+                "fullUrl": "https://offline-first-sync-backend.onrender.com/sync/push",
+                "requiresAuth": true,
+                "headers": {
+                    "Authorization": "Bearer <token>",
+                    "Content-Type": "application/json"
+                },
+                "requestBody": {
+                    "data": "object (full bucket list JSON)",
+                    "version": "number (optional, for conflict detection)"
+                },
+                "responseSuccess": {
+                    "message": "string",
+                    "version": "number",
+                    "lastModifiedAt": "string (ISO date)"
+                },
+                "responseConflict": {
+                    "error": "string",
+                    "serverVersion": "number",
+                    "serverData": "object"
+                }
+            },
+            "pull": {
+                "method": "GET",
+                "path": "/sync/pull",
+                "fullUrl": "https://offline-first-sync-backend.onrender.com/sync/pull",
+                "requiresAuth": true,
+                "headers": {
+                    "Authorization": "Bearer <token>"
+                },
+                "responseSuccess": {
+                    "data": "object (full bucket list JSON)",
+                    "version": "number",
+                    "lastModifiedAt": "string (ISO date) or null"
+                }
+            }
+        },
+        "health": {
+            "status": {
+                "method": "GET",
+                "path": "/",
+                "fullUrl": "https://offline-first-sync-backend.onrender.com/",
+                "requiresAuth": false,
+                "responseSuccess": {
+                    "message": "string"
+                }
+            }
+        }
+    },
+    "authentication": {
+        "type": "JWT",
+        "header": "Authorization",
+        "format": "Bearer <token>",
+        "expiresIn": "30 days"
+    },
+    "limits": {
+        "maxPayloadSize": "10MB",
+        "tokenExpiry": "30 days"
+    },
+    "errorCodes": {
+        "400": "Bad Request - Missing or invalid parameters",
+        "401": "Unauthorized - Invalid or missing token",
+        "409": "Conflict - Version mismatch detected",
+        "500": "Internal Server Error"
+    }
+}
