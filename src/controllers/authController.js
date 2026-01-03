@@ -33,13 +33,17 @@ const register = async (req, res) => {
         });
         await user.save();
 
-        // Initialize empty user data
+        // Initialize user data with optional backup data from client
+        // This supports the new backup model where users can upload local data during registration
+        const initialData = req.body.data || {}; // Accept data from client or use empty object
         const userData = new UserData({
             userId: user._id,
             version: 1,
-            data: {}
+            data: initialData
         });
         await userData.save();
+
+        console.log(`[Auth] User registered. Data backup: ${Object.keys(initialData).length > 0 ? 'Yes' : 'No'}`);
 
         // Generate token
         const token = jwt.sign(
@@ -99,7 +103,47 @@ const login = async (req, res) => {
     }
 };
 
+// POST /auth/restore
+// This endpoint is specifically for restoring server data to a client
+// It's semantically clearer than using /sync/pull for restore operations
+const restore = async (req, res) => {
+    try {
+        const userId = req.userId; // From JWT token via auth middleware
+
+        console.log(`[Auth] Restore request for user ${userId}`);
+
+        // Find user data
+        const userData = await UserData.findOne({ userId });
+
+        if (!userData || !userData.data || Object.keys(userData.data).length === 0) {
+            console.log(`[Auth] No backup data found for user ${userId}`);
+            return res.status(200).json({
+                data: {},
+                version: 0,
+                lastModifiedAt: null,
+                hasBackup: false,
+                message: 'No backup found. Start fresh or create a backup first.'
+            });
+        }
+
+        console.log(`[Auth] Restore data found. Version: ${userData.version}`);
+
+        // Return server data for restoration
+        res.status(200).json({
+            data: userData.data,
+            version: userData.version,
+            lastModifiedAt: userData.lastModifiedAt,
+            hasBackup: true,
+            message: 'Backup data retrieved successfully. This will overwrite local data.'
+        });
+    } catch (error) {
+        console.error('Restore error:', error);
+        res.status(500).json({ error: 'Restore failed' });
+    }
+};
+
 module.exports = {
     register,
-    login
+    login,
+    restore
 };
